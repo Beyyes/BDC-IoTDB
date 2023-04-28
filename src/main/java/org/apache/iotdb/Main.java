@@ -19,18 +19,20 @@ import java.util.List;
 
 public class Main {
 
-    private static final String LAST_QUERY = "last";
+    static final String LAST_QUERY = "last";
 
-    private static final String AVG_QUERY = "avg";
+    static final String AVG_QUERY = "avg";
 
-    private static final String LAST_QUERY_SQL = "select last(Value4) from root.vehicle.*";
+    static final String LAST_QUERY_SQL = "select last(Value4) from root.vehicle.*";
 
-    private static Session session;
+    static Session session;
 
-    private static final List<String> aggregatePaths =
+    static final List<String> aggregatePaths =
             Arrays.asList("Value6", "Value7", "Value21", "Value22", "Value23", "Value26", "Value28", "Value30", "Value35", "Value41");
 
-    private static final String AVG_QUERY_SQL = "select avg(%s) from root.vehicle.xx where time>%s and time<%s";
+    static final String AVG_QUERY_SQL = "select avg(%s) from root.vehicle.%s where time>%s and time<%s";
+
+    static final String DEFAULT_DEVICE_ID = "LSVNV2182E2119996";
 
     static final String HOST_ARGS = "h";
     static final String HOST_NAME = "host";
@@ -41,7 +43,7 @@ public class Main {
     static final String PORT_NAME = "port";
 
     static final String PASSWORD_ARGS = "pw";
-    private static final String PASSWORD_NAME = "password";
+    static final String PASSWORD_NAME = "password";
 
     static final String USERNAME_ARGS = "u";
     static final String USERNAME_NAME = "username";
@@ -54,19 +56,19 @@ public class Main {
     static final String END_TIME_NAME = "endTime";
 
     static final String RPC_COMPRESS_ARGS = "c";
-    private static final String RPC_COMPRESS_NAME = "rpcCompressed";
+    static final String RPC_COMPRESS_NAME = "rpcCompressed";
 
-    static final String MAX_PRINT_ROW_COUNT_ARGS = "maxPRC";
-    private static final String MAX_PRINT_ROW_COUNT_NAME = "maxPrintRowCount";
+    static final String FETCH_SIZE_ARGS = "fetch";
+    static final String FETCH_SIZE_NAME = "fetchSize";
 
-    private static final String EXECUTE_ARGS = "e";
-    private static final String EXECUTE_NAME = "execute";
+    static final String EXECUTE_ARGS = "e";
+    static final String EXECUTE_NAME = "execute";
 
-    private static final String DEVICE_ARGS = "device";
-    private static final String DEVICE_NAME = "deviceId";
+    static final String DEVICE_ARGS = "device";
+    static final String DEVICE_NAME = "deviceId";
 
-    private static final String QUERY_TYPE_ARGS = "type";
-    private static final String QUERY_TYPE_NAME = "queryType";
+    static final String QUERY_TYPE_ARGS = "type";
+    static final String QUERY_TYPE_NAME = "queryType";
 
     static final String REPEAT_ARGS = "repeat";
     static final String REPEAT_NAME = "repeatTimes";
@@ -79,15 +81,15 @@ public class Main {
     static String user = "root";
     static String passWord = "root";
     static String queryType;
-    static int repeat;
+    static int repeatTimes;
     static String deviceId;
     static long startTime;
     static long endTime;
     static boolean printResponse;
-    static int maxPrintCount;
+    static int fetchSize;
 
 
-    private static List<TAggregationType> aggregationTypes = Collections.singletonList(TAggregationType.AVG);
+    static final List<TAggregationType> aggregationTypes = Collections.singletonList(TAggregationType.AVG);
 
     public static void main(String[] args) throws IoTDBConnectionException, StatementExecutionException {
 
@@ -104,22 +106,23 @@ public class Main {
             host = commandLine.getOptionValue(HOST_ARGS, "127.0.0.1");
             port = Integer.parseInt(commandLine.getOptionValue(PORT_ARGS, "6667"));
             queryType = commandLine.getOptionValue(QUERY_TYPE_ARGS);
-            repeat = Integer.parseInt(commandLine.getOptionValue(REPEAT_ARGS, "1"));
-            startTime = Long.parseLong(commandLine.getOptionValue(START_TIME_ARGS));
-            endTime = Long.parseLong(commandLine.getOptionValue(END_TIME_ARGS));
-            maxPrintCount = Integer.parseInt(commandLine.getOptionValue(MAX_PRINT_ROW_COUNT_ARGS, "20000"));
+            repeatTimes = Integer.parseInt(commandLine.getOptionValue(REPEAT_ARGS, "1"));
+            startTime = Long.parseLong(commandLine.getOptionValue(START_TIME_ARGS, "1"));
+            endTime = Long.parseLong(commandLine.getOptionValue(END_TIME_ARGS, "2"));
+            fetchSize = Integer.parseInt(commandLine.getOptionValue(FETCH_SIZE_ARGS, "20000"));
             printResponse = Boolean.parseBoolean(commandLine.getOptionValue(PRINT_RESPONSE_ARGS, "false"));
+            deviceId = commandLine.getOptionValue(DEVICE_ARGS, DEFAULT_DEVICE_ID);
 
         } catch (ParseException e) {
             throw new RuntimeException(e);
         }
 
         if (!LAST_QUERY.equalsIgnoreCase(queryType) && !AVG_QUERY.equalsIgnoreCase(queryType)) {
-            System.out.println("QueryType must be last or avg!");
+            System.out.println("QueryType must be LAST or AVG!");
             return;
         }
 
-        executeQuery(host, port, deviceId, queryType, repeat, printResponse);
+        executeQuery(host, port, deviceId, queryType, repeatTimes, printResponse);
     }
 
     public static void executeQuery(String host,
@@ -139,7 +142,7 @@ public class Main {
                         .build();
         session.open(false);
 
-        session.setFetchSize(maxPrintCount);
+        session.setFetchSize(fetchSize);
 
         if (LAST_QUERY.equalsIgnoreCase(queryType)) {
             long allTime = 0, minTime = Long.MAX_VALUE, maxTime = Long.MIN_VALUE;
@@ -150,18 +153,17 @@ public class Main {
                 allTime += costTime;
                 minTime = Math.min(minTime, costTime);
                 maxTime = Math.max(maxTime, costTime);
-                System.out.printf("Execute result, sql: %s, cost time: %sms", LAST_QUERY_SQL, costTime);
+                System.out.println(String.format("Execute result, sql: %s, cost time: %sms", LAST_QUERY_SQL, costTime));
                 printResponse(dataSet, printResponse);
             }
 
-            System.out.printf("Execute sql: %s after %s times, min cost time: %sms, " +
-                            "max cost time: %sms, all cost time: %sms, avg cost time: %sms%n",
-                    LAST_QUERY_SQL, repeatTimes, minTime, maxTime, allTime, allTime / (double) repeatTimes);
+            System.out.println(String.format("Execute sql: %s after %s times, min cost time: %sms, " +
+                            "max cost time: %sms, all cost time: %sms, avg cost time: %sms",
+                    LAST_QUERY_SQL, repeatTimes, minTime, maxTime, allTime, allTime / (double) repeatTimes));
         }
 
 
         if (AVG_QUERY.equalsIgnoreCase(queryType)) {
-
             for (int i = 1; i <= repeatTimes; i++) {
                 // SELECT avg(Value6) FROM root.vehicle.VIN_X WHERE time ~ 1d
                 executeAvgQuery(aggregatePaths, startTime, endTime, false);
@@ -183,13 +185,13 @@ public class Main {
             long costTime = System.currentTimeMillis() - time0;
             allTime += costTime;
             System.out.printf("Execute result, sql: %s, cost time: %sms%n",
-                    String.format(AVG_QUERY_SQL, path, queryStartTime, queryEndTime), costTime);
+                    String.format(AVG_QUERY_SQL, path, deviceId, queryStartTime, queryEndTime), costTime);
             printResponse(dataSet, printResponse);
         }
         System.out.printf("Execute result, all cost time: %sms%n", allTime);
     }
 
-    public static void printResponse(SessionDataSet dataSet, boolean print)
+    private static void printResponse(SessionDataSet dataSet, boolean print)
             throws IoTDBConnectionException, StatementExecutionException {
         if (print) {
             while (dataSet.hasNext()) {
@@ -276,8 +278,8 @@ public class Main {
         options.addOption(execute);
 
         Option maxPrintCount =
-                Option.builder(MAX_PRINT_ROW_COUNT_ARGS)
-                        .argName(MAX_PRINT_ROW_COUNT_NAME)
+                Option.builder(FETCH_SIZE_ARGS)
+                        .argName(FETCH_SIZE_NAME)
                         .hasArg()
                         .desc("Maximum number of rows displayed (optional)")
                         .build();
@@ -293,9 +295,18 @@ public class Main {
         Option repeatTimes =
                 Option.builder(REPEAT_ARGS)
                         .argName(REPEAT_NAME)
+                        .hasArg()
                         .desc("Repeat Times")
                         .build();
-        options.addOption(queryType);
+        options.addOption(repeatTimes);
+
+        Option device =
+                Option.builder(DEVICE_ARGS)
+                        .argName(DEVICE_NAME)
+                        .hasArg()
+                        .desc("DeviceId")
+                        .build();
+        options.addOption(device);
 
         return options;
     }
