@@ -23,14 +23,16 @@ public class Main {
 
     static final String AVG_QUERY = "avg";
 
-    static final String LAST_QUERY_SQL = "select last(Value4) from root.vehicle.*";
+    static final String LAST_QUERY_SQL = "select last(value4) from root.test.g_0.*";
+
+    static final String FORMAT_LAST_QUERY_SQL = "select last(value4) from %s";
 
     static Session session;
 
     static final List<String> aggregatePaths =
-            Arrays.asList("Value6", "Value7", "Value21", "Value22", "Value23", "Value26", "Value28", "Value30", "Value35", "Value41");
+            Arrays.asList("value6", "value7", "value21", "value22", "value23", "value26", "value28", "value30", "value35", "value41");
 
-    static final String AVG_QUERY_SQL = "select avg(%s) from root.vehicle.%s where time>%s and time<%s";
+    static final String AVG_QUERY_SQL = "select avg(%s) from root.vehicle.g_0.%s where time>=%s and time<=%s";
 
     static final String DEFAULT_DEVICE_ID = "LSVNV2182E2119996";
 
@@ -88,7 +90,6 @@ public class Main {
     static boolean printResponse;
     static int fetchSize;
 
-
     static final List<TAggregationType> aggregationTypes = Collections.singletonList(TAggregationType.AVG);
 
     public static void main(String[] args) throws IoTDBConnectionException, StatementExecutionException {
@@ -111,7 +112,7 @@ public class Main {
             endTime = Long.parseLong(commandLine.getOptionValue(END_TIME_ARGS, "2"));
             fetchSize = Integer.parseInt(commandLine.getOptionValue(FETCH_SIZE_ARGS, "20000"));
             printResponse = Boolean.parseBoolean(commandLine.getOptionValue(PRINT_RESPONSE_ARGS, "false"));
-            deviceId = commandLine.getOptionValue(DEVICE_ARGS, DEFAULT_DEVICE_ID);
+            deviceId = commandLine.getOptionValue(DEVICE_ARGS, "");
 
         } catch (ParseException e) {
             throw new RuntimeException(e);
@@ -147,13 +148,18 @@ public class Main {
         if (LAST_QUERY.equalsIgnoreCase(queryType)) {
             long allTime = 0, minTime = Long.MAX_VALUE, maxTime = Long.MIN_VALUE;
             for (int i = 1; i <= repeatTimes; i++) {
+                String lastSql = LAST_QUERY_SQL;
+                if (deviceId != null && !deviceId.isEmpty()) {
+                    lastSql = String.format(FORMAT_LAST_QUERY_SQL, deviceId);
+                }
                 long startTime = System.currentTimeMillis();
-                SessionDataSet dataSet = session.executeQueryStatement(LAST_QUERY_SQL);
+                SessionDataSet dataSet = session.executeQueryStatement(lastSql);
                 long costTime = System.currentTimeMillis() - startTime;
                 allTime += costTime;
                 minTime = Math.min(minTime, costTime);
                 maxTime = Math.max(maxTime, costTime);
-                System.out.println(String.format("Execute result, sql: %s, cost time: %sms", LAST_QUERY_SQL, costTime));
+                System.out.println(String.format("Execute result %s times, sql: %s, cost time: %sms",
+                        i, LAST_QUERY_SQL, costTime));
                 printResponse(dataSet, printResponse);
             }
 
