@@ -23,18 +23,18 @@ public class Main {
 
     static final String AVG_QUERY = "avg";
 
-    static final String LAST_QUERY_SQL = "select last(value4) from root.test.g_0.*";
+    static final String LAST_QUERY_SQL = "select last(value4) from root.vehicle.g_0.*";
 
-    static final String FORMAT_LAST_QUERY_SQL = "select last(value4) from %s";
+    static final String FORMAT_LAST_QUERY_SQL = "select last(value4) from %s.*";
 
     static Session session;
 
     static final List<String> aggregatePaths =
             Arrays.asList("value6", "value7", "value21", "value22", "value23", "value26", "value28", "value30", "value35", "value41");
 
-    static final String AVG_QUERY_SQL = "select avg(%s) from root.vehicle.g_0.%s where time>=%s and time<=%s";
+    static final String AVG_QUERY_SQL = "select avg(%s) from %s where time>=%s and time<=%s";
 
-    static final String DEFAULT_DEVICE_ID = "LSVNV2182E2119996";
+    static final String DEFAULT_DEVICE_ID = "root.vehicle.g_0.LSVNV2182E2119996";
 
     static final String HOST_ARGS = "h";
     static final String HOST_NAME = "host";
@@ -84,7 +84,7 @@ public class Main {
     static String passWord = "root";
     static String queryType;
     static int repeatTimes;
-    static String deviceId;
+    static String deviceId = "";
     static long startTime;
     static long endTime;
     static boolean printResponse;
@@ -97,7 +97,7 @@ public class Main {
         Options options = createOptions();
 
         if (args == null || args.length == 0) {
-            System.out.println("no args");
+            System.out.println("no input parameters, please input parameters");
             return;
         }
 
@@ -113,7 +113,6 @@ public class Main {
             fetchSize = Integer.parseInt(commandLine.getOptionValue(FETCH_SIZE_ARGS, "20000"));
             printResponse = Boolean.parseBoolean(commandLine.getOptionValue(PRINT_RESPONSE_ARGS, "false"));
             deviceId = commandLine.getOptionValue(DEVICE_ARGS, "");
-
         } catch (ParseException e) {
             throw new RuntimeException(e);
         }
@@ -123,18 +122,12 @@ public class Main {
             return;
         }
 
-        executeQuery(host, port, deviceId, queryType, repeatTimes, printResponse);
+        executeQuery();
     }
 
-    public static void executeQuery(String host,
-                                    int port,
-                                    String deviceId,
-                                    String queryType,
-                                    int repeatTimes,
-                                    boolean printResponse)
+    public static void executeQuery()
             throws IoTDBConnectionException, StatementExecutionException {
-        session =
-                new Session.Builder()
+        session = new Session.Builder()
                         .host(host)
                         .port(port)
                         .username(user)
@@ -142,64 +135,67 @@ public class Main {
                         .version(Version.V_1_0)
                         .build();
         session.open(false);
-
         session.setFetchSize(fetchSize);
 
         if (LAST_QUERY.equalsIgnoreCase(queryType)) {
-            long allTime = 0, minTime = Long.MAX_VALUE, maxTime = Long.MIN_VALUE;
-            for (int i = 1; i <= repeatTimes; i++) {
-                String lastSql = LAST_QUERY_SQL;
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    lastSql = String.format(FORMAT_LAST_QUERY_SQL, deviceId);
-                }
-                long startTime = System.currentTimeMillis();
-                SessionDataSet dataSet = session.executeQueryStatement(lastSql);
-                long costTime = System.currentTimeMillis() - startTime;
-                allTime += costTime;
-                minTime = Math.min(minTime, costTime);
-                maxTime = Math.max(maxTime, costTime);
-                System.out.println(String.format("Execute result %s times, sql: %s, cost time: %sms",
-                        i, LAST_QUERY_SQL, costTime));
-                printResponse(dataSet, printResponse);
-            }
-
-            System.out.println(String.format("Execute sql: %s after %s times, min cost time: %sms, " +
-                            "max cost time: %sms, all cost time: %sms, avg cost time: %sms",
-                    LAST_QUERY_SQL, repeatTimes, minTime, maxTime, allTime, allTime / (double) repeatTimes));
+            executeLastQuery();
         }
-
 
         if (AVG_QUERY.equalsIgnoreCase(queryType)) {
             for (int i = 1; i <= repeatTimes; i++) {
-                // SELECT avg(Value6) FROM root.vehicle.VIN_X WHERE time ~ 1d
-                executeAvgQuery(aggregatePaths, startTime, endTime, false);
+                executeAvgQuery(startTime, endTime);
             }
         }
 
         session.close();
     }
 
-    public static void executeAvgQuery(List<String> aggregatePaths,
-                                       long queryStartTime,
-                                       long queryEndTime,
-                                       boolean printResponse) throws IoTDBConnectionException, StatementExecutionException {
+    public static void executeLastQuery() throws IoTDBConnectionException, StatementExecutionException {
+        long allTime = 0, minTime = Long.MAX_VALUE, maxTime = Long.MIN_VALUE;
+        for (int i = 1; i <= repeatTimes; i++) {
+            String lastSql = LAST_QUERY_SQL;
+            if (!deviceId.isEmpty()) {
+                lastSql = String.format(FORMAT_LAST_QUERY_SQL, deviceId);
+            }
+            long startTime = System.currentTimeMillis();
+            SessionDataSet dataSet = session.executeQueryStatement(lastSql);
+            long costTime = System.currentTimeMillis() - startTime;
+            allTime += costTime;
+            minTime = Math.min(minTime, costTime);
+            maxTime = Math.max(maxTime, costTime);
+            System.out.println(String.format("Execute last query for %s times, sql: %s, cost time: %sms",
+                    i, lastSql, costTime));
+            printResponse(dataSet);
+        }
+
+        System.out.println(String.format("Execute last query sql: %s after %s times, min cost time: %sms, " +
+                        "max cost time: %sms, all cost time: %sms, avg cost time: %sms",
+                LAST_QUERY_SQL, repeatTimes, minTime, maxTime, allTime, allTime / (double) repeatTimes));
+    }
+
+    public static void executeAvgQuery(long queryStartTime,
+                                       long queryEndTime) throws IoTDBConnectionException, StatementExecutionException {
         long allTime = 0;
+        if (deviceId.isEmpty()) {
+            deviceId = DEFAULT_DEVICE_ID;
+        }
         for (String path : aggregatePaths) {
+            String fullPath = deviceId + "." + path;
             long time0 = System.currentTimeMillis();
-            SessionDataSet dataSet = session.executeAggregationQuery(Collections.singletonList(path), aggregationTypes,
+            SessionDataSet dataSet = session.executeAggregationQuery(Collections.singletonList(fullPath), aggregationTypes,
                     queryStartTime, queryEndTime);
             long costTime = System.currentTimeMillis() - time0;
             allTime += costTime;
-            System.out.printf("Execute result, sql: %s, cost time: %sms%n",
+            System.out.printf("Execute avg query sql: %s, cost time: %sms%n",
                     String.format(AVG_QUERY_SQL, path, deviceId, queryStartTime, queryEndTime), costTime);
-            printResponse(dataSet, printResponse);
+            printResponse(dataSet);
         }
-        System.out.printf("Execute result, all cost time: %sms%n", allTime);
+        System.out.printf("Execute avg query sql result, all cost time: %sms%n", allTime);
     }
 
-    private static void printResponse(SessionDataSet dataSet, boolean print)
+    private static void printResponse(SessionDataSet dataSet)
             throws IoTDBConnectionException, StatementExecutionException {
-        if (print) {
+        if (printResponse) {
             while (dataSet.hasNext()) {
                 System.out.println(dataSet.next());
             }
