@@ -12,7 +12,9 @@ import org.apache.iotdb.isession.util.Version;
 import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.rpc.StatementExecutionException;
 import org.apache.iotdb.session.Session;
+import org.apache.iotdb.tsfile.read.common.RowRecord;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -29,12 +31,16 @@ public class Main {
 
     static Session session;
 
+    static final String VALUE4 = "value4";
+
     static final List<String> aggregatePaths =
             Arrays.asList("value6", "value7", "value21", "value22", "value23", "value26", "value28", "value30", "value35", "value41");
 
     static final String AVG_QUERY_SQL = "select avg(%s) from %s where time>=%s and time<=%s";
 
     static final String DEFAULT_DEVICE_ID = "root.vehicle.g_0.LSVNV2182E2119996";
+
+    static final int WARM_UP_NUM = 3;
 
     static final String HOST_ARGS = "h";
     static final String HOST_NAME = "host";
@@ -92,6 +98,11 @@ public class Main {
 
     static final List<TAggregationType> aggregationTypes = Collections.singletonList(TAggregationType.AVG);
 
+    static final long LARGE_DATA_START_TIME = 1199174400000L;
+    static final long DAY_STEP = 86400000L;
+    static final long WEEK_STEP = 86400000 * 7L;
+    static final long MONTH_STEP = 86400000 * 30L;
+
     public static void main(String[] args) throws IoTDBConnectionException, StatementExecutionException {
 
         Options options = createOptions();
@@ -128,12 +139,12 @@ public class Main {
     public static void executeQuery()
             throws IoTDBConnectionException, StatementExecutionException {
         session = new Session.Builder()
-                        .host(host)
-                        .port(port)
-                        .username(user)
-                        .password(passWord)
-                        .version(Version.V_1_0)
-                        .build();
+                .host(host)
+                .port(port)
+                .username(user)
+                .password(passWord)
+                .version(Version.V_1_0)
+                .build();
         session.open(false);
         session.setFetchSize(fetchSize);
 
@@ -143,7 +154,15 @@ public class Main {
 
         if (AVG_QUERY.equalsIgnoreCase(queryType)) {
             for (int i = 1; i <= repeatTimes; i++) {
-                executeAvgQuery(startTime, endTime);
+                for (String path : aggregatePaths) {
+                    executeAvgQuery(path, DAY_STEP);
+                }
+                for (String path : aggregatePaths) {
+                    executeAvgQuery(path, WEEK_STEP);
+                }
+                for (String path : aggregatePaths) {
+                    executeAvgQuery(path, MONTH_STEP);
+                }
             }
         }
 
@@ -152,20 +171,32 @@ public class Main {
 
     public static void executeLastQuery() throws IoTDBConnectionException, StatementExecutionException {
         long allTime = 0, minTime = Long.MAX_VALUE, maxTime = Long.MIN_VALUE;
-        for (int i = 1; i <= repeatTimes; i++) {
+        for (int idx = 1 - WARM_UP_NUM; idx <= repeatTimes; idx++) {
             String lastSql = LAST_QUERY_SQL;
             if (!deviceId.isEmpty()) {
                 lastSql = String.format(FORMAT_LAST_QUERY_SQL, deviceId);
             }
+
+            SessionDataSet deviceSet = session.executeQueryStatement("show devices");
+            List<String> paths = new ArrayList<>();
+            while (deviceSet.hasNext()) {
+                RowRecord r = deviceSet.next();
+                String deviceName = r.getFields().get(0).getStringValue();
+                paths.add(deviceName + "." + VALUE4);
+            }
+
             long startTime = System.currentTimeMillis();
-            SessionDataSet dataSet = session.executeQueryStatement(lastSql);
+            SessionDataSet dataSet = session.executeLastDataQuery(paths);
             long costTime = System.currentTimeMillis() - startTime;
-            allTime += costTime;
-            minTime = Math.min(minTime, costTime);
-            maxTime = Math.max(maxTime, costTime);
-            System.out.println(String.format("Execute last query for %s times, sql: %s, cost time: %sms",
-                    i, lastSql, costTime));
-            printResponse(dataSet);
+
+            if (idx >= 1) {
+                allTime += costTime;
+                minTime = Math.min(minTime, costTime);
+                maxTime = Math.max(maxTime, costTime);
+                System.out.println(String.format("Execute last query for %s times, sql: %s, cost time: %sms",
+                        idx, lastSql, costTime));
+                printResponse(dataSet);
+            }
         }
 
         System.out.println(String.format("Execute last query sql: %s after %s times, min cost time: %sms, " +
@@ -173,24 +204,30 @@ public class Main {
                 LAST_QUERY_SQL, repeatTimes, minTime, maxTime, allTime, allTime / (double) repeatTimes));
     }
 
-    public static void executeAvgQuery(long queryStartTime,
-                                       long queryEndTime) throws IoTDBConnectionException, StatementExecutionException {
-        long allTime = 0;
+
+    public static void executeAvgQuery(String path,
+                                       long step) throws IoTDBConnectionException, StatementExecutionException {
+
         if (deviceId.isEmpty()) {
             deviceId = DEFAULT_DEVICE_ID;
         }
-        for (String path : aggregatePaths) {
-            String fullPath = deviceId + "." + path;
+        String fullPath = deviceId + "." + path;
+
+        long allTime = 0;
+        long sTime = LARGE_DATA_START_TIME, eTime;
+        int cnt = 0;
+        for (; cnt < 10; cnt++) {
+            eTime = sTime + step;
             long time0 = System.currentTimeMillis();
             SessionDataSet dataSet = session.executeAggregationQuery(Collections.singletonList(fullPath), aggregationTypes,
-                    queryStartTime, queryEndTime);
+                    sTime, eTime);
             long costTime = System.currentTimeMillis() - time0;
             allTime += costTime;
-            System.out.printf("Execute avg query sql: %s, cost time: %sms%n",
-                    String.format(AVG_QUERY_SQL, path, deviceId, queryStartTime, queryEndTime), costTime);
+            sTime = eTime;
             printResponse(dataSet);
         }
-        System.out.printf("Execute avg query sql result, all cost time: %sms%n", allTime);
+
+        System.out.printf("Execute avg query sql result, all cost time: %sms, avg cost time: %sms", allTime, allTime / 10.0);
     }
 
     private static void printResponse(SessionDataSet dataSet)
