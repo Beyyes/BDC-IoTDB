@@ -12,7 +12,6 @@ import org.apache.iotdb.isession.util.Version;
 import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.rpc.StatementExecutionException;
 import org.apache.iotdb.session.Session;
-import org.apache.iotdb.tsfile.read.common.RowRecord;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,14 +28,16 @@ public class Main {
 
     static final String FORMAT_LAST_QUERY_SQL = "select last(value4) from %s.*";
 
-    static Session session;
+    static final String LAST_QUERY_SQL_WITH_TIME_RANGE = "select last(value4) from root.** where time>=1262336399000 and time<=1262336399000";
 
-    static final String VALUE4 = "value4";
+    static final String FORMAT_LAST_QUERY_RPC = "%s.*.value4";
+
+    static Session session;
 
     static final List<String> aggregatePaths =
             Arrays.asList("value6", "value7", "value21", "value22", "value23", "value26", "value28", "value30", "value35", "value41");
 
-    static final String AVG_QUERY_SQL = "select avg(%s) from %s where time>=%s and time<=%s";
+    static final String AVG_QUERY_SQL = "select avg(%s) where time>=%s and time<=%s";
 
     static final String DEFAULT_DEVICE_ID = "root.vehicle.g_0.LSVNV2182E2119996";
 
@@ -172,36 +173,37 @@ public class Main {
     public static void executeLastQuery() throws IoTDBConnectionException, StatementExecutionException {
         long allTime = 0, minTime = Long.MAX_VALUE, maxTime = Long.MIN_VALUE;
         for (int idx = 1 - WARM_UP_NUM; idx <= repeatTimes; idx++) {
-            String lastSql = LAST_QUERY_SQL;
-            if (!deviceId.isEmpty()) {
-                lastSql = String.format(FORMAT_LAST_QUERY_SQL, deviceId);
-            }
 
-            SessionDataSet deviceSet = session.executeQueryStatement("show devices");
             List<String> paths = new ArrayList<>();
-            while (deviceSet.hasNext()) {
-                RowRecord r = deviceSet.next();
-                String deviceName = r.getFields().get(0).getStringValue();
-                paths.add(deviceName + "." + VALUE4);
-            }
-
+            paths.add("root.realtime1.*.value4");
+            paths.add("root.realtime2.r_0.*.value4");
+            paths.add("root.realtime3.r_0.*.value4");
             long startTime = System.currentTimeMillis();
             SessionDataSet dataSet = session.executeLastDataQuery(paths);
             long costTime = System.currentTimeMillis() - startTime;
+
+//            long startTime = System.currentTimeMillis();
+//            SessionDataSet dataSet = session.executeQueryStatement(LAST_QUERY_SQL_WITH_TIME_RANGE);
+//            long costTime = System.currentTimeMillis() - startTime;
 
             if (idx >= 1) {
                 allTime += costTime;
                 minTime = Math.min(minTime, costTime);
                 maxTime = Math.max(maxTime, costTime);
-                System.out.println(String.format("Execute last query for %s times, sql: %s, cost time: %sms",
-                        idx, lastSql, costTime));
+
+                String lastSql = LAST_QUERY_SQL;
+                if (!deviceId.isEmpty()) {
+                    lastSql = String.format(FORMAT_LAST_QUERY_SQL, deviceId);
+                }
+                System.out.printf("Execute last query for %s times, sql: %s, cost time: %sms%n",
+                        idx, lastSql, costTime);
                 printResponse(dataSet);
             }
         }
 
-        System.out.println(String.format("Execute last query sql: %s after %s times, min cost time: %sms, " +
-                        "max cost time: %sms, all cost time: %sms, avg cost time: %sms",
-                LAST_QUERY_SQL, repeatTimes, minTime, maxTime, allTime, allTime / (double) repeatTimes));
+        System.out.printf("Execute last query after %s times, min cost time: %sms, " +
+                        "max cost time: %sms, all cost time: %sms, avg cost time: %sms%n",
+                repeatTimes, minTime, maxTime, allTime, allTime / (double) repeatTimes);
     }
 
 
@@ -224,15 +226,26 @@ public class Main {
             long costTime = System.currentTimeMillis() - time0;
             allTime += costTime;
             sTime = eTime;
-            printResponse(dataSet);
+            printResponseWithTime(dataSet, fullPath, sTime, eTime);
         }
 
-        System.out.printf("Execute avg query sql result, all cost time: %sms, avg cost time: %sms", allTime, allTime / 10.0);
+        System.out.printf("Execute avg query result, path: %s, step: %sday, all cost time: %sms, avg cost time: %sms%n",
+                fullPath, step/86400000, allTime, allTime / 10.0);
     }
 
     private static void printResponse(SessionDataSet dataSet)
             throws IoTDBConnectionException, StatementExecutionException {
         if (printResponse) {
+            while (dataSet.hasNext()) {
+                System.out.println(dataSet.next());
+            }
+        }
+    }
+
+    private static void printResponseWithTime(SessionDataSet dataSet, String path, long sTime, long eTime)
+            throws IoTDBConnectionException, StatementExecutionException {
+        if (printResponse) {
+            System.out.println(String.format(AVG_QUERY_SQL, path, sTime, eTime));
             while (dataSet.hasNext()) {
                 System.out.println(dataSet.next());
             }
