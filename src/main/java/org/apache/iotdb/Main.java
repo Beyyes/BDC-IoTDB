@@ -41,8 +41,6 @@ public class Main {
 
     static final String DEFAULT_DEVICE_ID = "root.vehicle.g_0.LSVNV2182E2119996";
 
-    static final int WARM_UP_NUM = 3;
-
     static final String HOST_ARGS = "h";
     static final String HOST_NAME = "host";
 
@@ -172,31 +170,21 @@ public class Main {
 
     public static void executeLastQuery() throws IoTDBConnectionException, StatementExecutionException {
         long allTime = 0, minTime = Long.MAX_VALUE, maxTime = Long.MIN_VALUE;
-        for (int idx = 1 - WARM_UP_NUM; idx <= repeatTimes; idx++) {
+        for (int idx = 1; idx <= repeatTimes; idx++) {
 
             List<String> paths = new ArrayList<>();
-            paths.add("root.realtime1.*.value4");
-            paths.add("root.realtime2.r_0.*.value4");
-            paths.add("root.realtime3.r_0.*.value4");
+            paths.add("root.realtime.r_0.*.value4");
             long startTime = System.currentTimeMillis();
             SessionDataSet dataSet = session.executeLastDataQuery(paths);
             long costTime = System.currentTimeMillis() - startTime;
-
-//            long startTime = System.currentTimeMillis();
-//            SessionDataSet dataSet = session.executeQueryStatement(LAST_QUERY_SQL_WITH_TIME_RANGE);
-//            long costTime = System.currentTimeMillis() - startTime;
 
             if (idx >= 1) {
                 allTime += costTime;
                 minTime = Math.min(minTime, costTime);
                 maxTime = Math.max(maxTime, costTime);
 
-                String lastSql = LAST_QUERY_SQL;
-                if (!deviceId.isEmpty()) {
-                    lastSql = String.format(FORMAT_LAST_QUERY_SQL, deviceId);
-                }
                 System.out.printf("Execute last query for %s times, sql: %s, cost time: %sms%n",
-                        idx, lastSql, costTime);
+                        idx, "select last(value4) from root.realtime.r_0.*", costTime);
                 printResponse(dataSet);
             }
         }
@@ -221,12 +209,13 @@ public class Main {
         for (; cnt < 10; cnt++) {
             eTime = sTime + step;
             long time0 = System.currentTimeMillis();
-            SessionDataSet dataSet = session.executeAggregationQuery(Collections.singletonList(fullPath), aggregationTypes,
+            SessionDataSet dataSet = session.executeAggregationQuery(Collections.singletonList(fullPath),
+                    Collections.singletonList(TAggregationType.AVG),
                     sTime, eTime);
             long costTime = System.currentTimeMillis() - time0;
             allTime += costTime;
-            sTime = eTime;
             printResponseWithTime(dataSet, fullPath, sTime, eTime);
+            sTime = eTime;
         }
 
         System.out.printf("Execute avg query result, path: %s, step: %sday, all cost time: %sms, avg cost time: %sms%n",
