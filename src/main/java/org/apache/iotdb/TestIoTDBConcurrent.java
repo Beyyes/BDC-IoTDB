@@ -3,6 +3,7 @@ package org.apache.iotdb;
 
 import org.apache.iotdb.rpc.*;
 import org.apache.iotdb.session.*;
+
 import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -12,19 +13,16 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
 /**
  * 测试IOTDB并发连接数
  */
-public class TestIoTDBConcurrent
-{
+public class TestIoTDBConcurrent {
 
-    public static void main(String[] args) throws IoTDBConnectionException, StatementExecutionException, InterruptedException
-    {
-        Scanner scanner = new Scanner(System.in);
+    static String host = "172.20.31.26";
+
+    public static void main(String[] args) throws InterruptedException {
         if (args.length == 0) {
             System.out.println("Please provide an argument");
             System.exit(1);
         }
-        String my_count = args[0];
-        String host = args[1];
-        int n = Integer.parseInt(my_count);
+        int n = 4;
 
         ExecutorService executorService = Executors.newFixedThreadPool(n);
         AtomicInteger atomic_count = new AtomicInteger(0);
@@ -38,14 +36,15 @@ public class TestIoTDBConcurrent
                 int tid = atomic_count.incrementAndGet() - 1;
                 int conn_count = 0;
                 System.out.println("tid=" + tid + " running");
-                // Session session = new Session.Builder().host("127.0.0.1").port(6667).username("root").password("root").build();
-                Session.Builder builder = new Session.Builder().host(host).port(6667).username("root").password("root");
                 while (true) {
-                    Session session = builder.build();
                     try {
+                        Session session = new Session.Builder().host(host).port(6667).username("root").password("root").build();
                         session.open(false);
-                        session.close(); //长连接
+                        session.testInsertRecord(null, 1, null, null, null);
                     } catch (IoTDBConnectionException e) {
+                        System.out.println("Meets exception: ");
+                        break;
+                    } catch (StatementExecutionException e) {
                         throw new RuntimeException(e);
                     }
                     conn_count++;
@@ -64,9 +63,10 @@ public class TestIoTDBConcurrent
             for (int i = 0; i < conn_count_array.length(); i++) {
                 total_count += conn_count_array.get(i);
             }
-            sum +=  (total_count - prev_total_count);
+            sum += (total_count - prev_total_count);
             count++;
-            System.out.println("in 1 second, total_count=" + (total_count - prev_total_count) + ", sum=" + sum + ", avg=" + sum/count);
+            System.out.println("in 1 second, total_count=" + (total_count - prev_total_count) +
+                    ", sum=" + sum + ", avg=" + sum / count);
             prev_total_count = total_count;
             Thread.sleep(1000);
         }

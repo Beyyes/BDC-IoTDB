@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 public class ConnectionExample {
 
-    static String host = "172.20.31.26";
+    static String host = "11.101.17.33";
     static String user = "root";
     static String passWord = "root";
 
